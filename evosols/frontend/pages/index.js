@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import { useBlockchain } from '../hooks/useBlockchain';
 
 export default function Home() {
   const { address, isConnected } = useAccount();
-  const [minting, setMinting] = useState(false);
+  const { mintCreature, loading } = useBlockchain();
   const [selectedCreature, setSelectedCreature] = useState(null);
+  const [mounted, setMounted] = useState(false);
+  const [mintingCreature, setMintingCreature] = useState(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const creatures = [
     {
@@ -16,7 +23,7 @@ export default function Home() {
       description: 'Born from volcanic ashes, masters offensive strategies',
       stats: { attack: 80, defense: 40, speed: 60, intelligence: 50 },
       color: 'from-orange-500 to-red-600',
-      emoji: ''
+      emoji: '🔥'
     },
     {
       name: 'Aqua Serpent',
@@ -24,7 +31,7 @@ export default function Home() {
       description: 'Ancient sea guardian, excels in balanced combat',
       stats: { attack: 60, defense: 60, speed: 50, intelligence: 60 },
       color: 'from-blue-500 to-cyan-600',
-      emoji: ''
+      emoji: '💧'
     },
     {
       name: 'Terra Golem',
@@ -32,7 +39,7 @@ export default function Home() {
       description: 'Mountain defender, specializes in defensive tactics',
       stats: { attack: 40, defense: 80, speed: 30, intelligence: 70 },
       color: 'from-green-500 to-emerald-600',
-      emoji: ''
+      emoji: '🌿'
     }
   ];
 
@@ -42,110 +49,136 @@ export default function Home() {
       return;
     }
 
-    setMinting(true);
-    setSelectedCreature(creature.name);
+    setMintingCreature(creature.name);
 
     try {
-      // Demo mode - simulate minting
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Generate creature image
+      const canvas = document.createElement('canvas');
+      canvas.width = 500;
+      canvas.height = 500;
+      const ctx = canvas.getContext('2d');
 
-      // Register creature in backend
-      const response = await fetch('http://localhost:5000/api/creatures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...creature,
-          owner: address,
-          level: 1,
-          evolutionStage: 'Base'
-        })
-      });
+      // Draw creature background
+      const gradient = ctx.createLinearGradient(0, 0, 500, 500);
+      const colors = {
+        fire: ['#ff6b6b', '#ff0000'],
+        water: ['#4dabf7', '#0066ff'],
+        earth: ['#51cf66', '#00aa00']
+      };
 
-      if (response.ok) {
-        toast.success('Creature minted successfully! (Demo Mode)');
-      } else {
-        throw new Error('Failed to register creature');
+      gradient.addColorStop(0, colors[creature.element][0]);
+      gradient.addColorStop(1, colors[creature.element][1]);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 500, 500);
+
+      // Add creature emoji
+      ctx.font = '200px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(creature.emoji, 250, 250);
+
+      // Convert to blob
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+
+      // Mint creature
+      const result = await mintCreature(creature.name, creature.element, blob);
+
+      if (result.success) {
+        toast.success('Successfully minted! Redirecting to collection...');
+        setTimeout(() => {
+          window.location.href = '/collection';
+        }, 2000);
       }
     } catch (error) {
-      toast.error('Minting failed. Please try again.');
       console.error('Minting error:', error);
+      toast.error('Minting failed. Please try again.');
     } finally {
-      setMinting(false);
-      setSelectedCreature(null);
+      setMintingCreature(null);
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 to-blue-900">
+        <div className="container px-4 py-16 mx-auto">
+          <div className="text-center">
+            <h1 className="mb-6 text-5xl font-bold text-white md:text-6xl">Loading...</h1>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 to-blue-900">
       {isConnected && <Navbar />}
-      
-      <div className="container mx-auto px-4 py-16">
+
+      <div className="container px-4 py-16 mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="mb-12 text-center"
         >
-          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6">
+          <h1 className="mb-6 text-5xl font-bold text-white md:text-6xl">
             AI-Driven NFTs That <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">Evolve</span>
           </h1>
-          <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-8">
+          <p className="max-w-3xl mx-auto mb-8 text-xl text-gray-300">
             Your playstyle shapes your NFT. Battle, evolve, and create<br />
             unique creatures that reflect how you play.
           </p>
           {process.env.NEXT_PUBLIC_DEMO_MODE === 'true' && (
-            <div className="inline-block px-6 py-3 bg-purple-900/50 rounded-full border border-purple-500/50 mb-8">
-              <span className="text-purple-400"> Demo Mode Active - No real transactions</span>
+            <div className="inline-block px-6 py-3 mb-8 border rounded-full bg-purple-900/50 border-purple-500/50">
+              <span className="text-purple-400">🔴 Demo Mode Active - No real transactions</span>
             </div>
           )}
         </motion.div>
 
-        <h2 className="text-3xl font-bold text-white text-center mb-8">Choose Your Starter Soul</h2>
+        <h2 className="mb-8 text-3xl font-bold text-center text-white">Choose Your Starter Soul</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <div className="grid max-w-6xl grid-cols-1 gap-8 mx-auto md:grid-cols-3">
           {creatures.map((creature, index) => (
             <motion.div
               key={creature.name}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700 hover:border-purple-500 transition-all"
+              className="p-6 transition-all border border-gray-700 bg-gray-800/50 backdrop-blur-sm rounded-2xl hover:border-purple-500"
             >
               <div className={`h-48 rounded-lg bg-gradient-to-br ${creature.color} flex items-center justify-center mb-4`}>
                 <span className="text-7xl">{creature.emoji}</span>
               </div>
-              
-              <h3 className="text-2xl font-bold text-white mb-2">{creature.name}</h3>
-              <p className="text-gray-400 mb-4">{creature.description}</p>
-              
+
+              <h3 className="mb-2 text-2xl font-bold text-white">{creature.name}</h3>
+              <p className="mb-4 text-gray-400">{creature.description}</p>
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="text-gray-300">
                   <span className="text-sm">ATK: </span>
-                  <span className="text-orange-400 font-bold">{creature.stats.attack}</span>
+                  <span className="font-bold text-orange-400">{creature.stats.attack}</span>
                 </div>
                 <div className="text-gray-300">
                   <span className="text-sm">DEF: </span>
-                  <span className="text-blue-400 font-bold">{creature.stats.defense}</span>
+                  <span className="font-bold text-blue-400">{creature.stats.defense}</span>
                 </div>
                 <div className="text-gray-300">
                   <span className="text-sm">SPD: </span>
-                  <span className="text-green-400 font-bold">{creature.stats.speed}</span>
+                  <span className="font-bold text-green-400">{creature.stats.speed}</span>
                 </div>
                 <div className="text-gray-300">
                   <span className="text-sm">INT: </span>
-                  <span className="text-purple-400 font-bold">{creature.stats.intelligence}</span>
+                  <span className="font-bold text-purple-400">{creature.stats.intelligence}</span>
                 </div>
               </div>
-              
+
               <button
                 onClick={() => handleMint(creature)}
-                disabled={minting}
-                className={`w-full py-3 px-6 rounded-lg font-bold text-white transition-all ${
-                  minting && selectedCreature === creature.name
+                disabled={loading || mintingCreature === creature.name}
+                className={`w-full py-3 px-6 rounded-lg font-bold text-white transition-all ${loading || mintingCreature === creature.name
                     ? 'bg-gray-600 cursor-not-allowed'
                     : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
-                }`}
+                  }`}
               >
-                {minting && selectedCreature === creature.name ? 'Minting...' : 'Mint Creature'}
+                {mintingCreature === creature.name ? 'Minting...' : 'Mint Creature (0.5 MATIC)'}
               </button>
             </motion.div>
           ))}
