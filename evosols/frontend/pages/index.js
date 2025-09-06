@@ -1,13 +1,17 @@
+// frontend/pages/index.js
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
 import { useBlockchain } from '../hooks/useBlockchain';
 
 export default function Home() {
+  const router = useRouter();
   const { address, isConnected } = useAccount();
-  const { mintCreature, loading } = useBlockchain();
+  const { mintCreature, loading, isDemoMode } = useBlockchain();
   const [selectedCreature, setSelectedCreature] = useState(null);
   const [mounted, setMounted] = useState(false);
   const [mintingCreature, setMintingCreature] = useState(null);
@@ -39,7 +43,7 @@ export default function Home() {
       description: 'Mountain defender, specializes in defensive tactics',
       stats: { attack: 40, defense: 80, speed: 30, intelligence: 70 },
       color: 'from-green-500 to-emerald-600',
-      emoji: '🌿'
+      emoji: '🌱'
     }
   ];
 
@@ -52,41 +56,16 @@ export default function Home() {
     setMintingCreature(creature.name);
 
     try {
-      // Generate creature image
-      const canvas = document.createElement('canvas');
-      canvas.width = 500;
-      canvas.height = 500;
-      const ctx = canvas.getContext('2d');
+      const result = await mintCreature({
+        name: `${creature.name} #${Date.now().toString().slice(-4)}`,
+        element: creature.element,
+        stats: creature.stats
+      });
 
-      // Draw creature background
-      const gradient = ctx.createLinearGradient(0, 0, 500, 500);
-      const colors = {
-        fire: ['#ff6b6b', '#ff0000'],
-        water: ['#4dabf7', '#0066ff'],
-        earth: ['#51cf66', '#00aa00']
-      };
-
-      gradient.addColorStop(0, colors[creature.element][0]);
-      gradient.addColorStop(1, colors[creature.element][1]);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 500, 500);
-
-      // Add creature emoji
-      ctx.font = '200px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(creature.emoji, 250, 250);
-
-      // Convert to blob
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-
-      // Mint creature
-      const result = await mintCreature(creature.name, creature.element, blob);
-
-      if (result.success) {
+      if (result) {
         toast.success('Successfully minted! Redirecting to collection...');
         setTimeout(() => {
-          window.location.href = '/collection';
+          router.push('/collection');
         }, 2000);
       }
     } catch (error) {
@@ -94,6 +73,7 @@ export default function Home() {
       toast.error('Minting failed. Please try again.');
     } finally {
       setMintingCreature(null);
+      setSelectedCreature(null);
     }
   };
 
@@ -126,63 +106,75 @@ export default function Home() {
             Your playstyle shapes your NFT. Battle, evolve, and create<br />
             unique creatures that reflect how you play.
           </p>
-          {process.env.NEXT_PUBLIC_DEMO_MODE === 'true' && (
+          {isDemoMode && (
             <div className="inline-block px-6 py-3 mb-8 border rounded-full bg-purple-900/50 border-purple-500/50">
-              <span className="text-purple-400">🔴 Demo Mode Active - No real transactions</span>
+              <span className="text-purple-400">🎮 Demo Mode Active - No real transactions</span>
             </div>
           )}
         </motion.div>
 
-        <h2 className="mb-8 text-3xl font-bold text-center text-white">Choose Your Starter Soul</h2>
+        {!isConnected ? (
+          <div className="text-center">
+            <ConnectButton />
+          </div>
+        ) : (
+          <>
+            <h2 className="mb-8 text-3xl font-bold text-center text-white">Choose Your Starter Soul</h2>
 
-        <div className="grid max-w-6xl grid-cols-1 gap-8 mx-auto md:grid-cols-3">
-          {creatures.map((creature, index) => (
-            <motion.div
-              key={creature.name}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="p-6 transition-all border border-gray-700 bg-gray-800/50 backdrop-blur-sm rounded-2xl hover:border-purple-500"
-            >
-              <div className={`h-48 rounded-lg bg-gradient-to-br ${creature.color} flex items-center justify-center mb-4`}>
-                <span className="text-7xl">{creature.emoji}</span>
-              </div>
+            <div className="grid max-w-6xl grid-cols-1 gap-8 mx-auto md:grid-cols-3">
+              {creatures.map((creature, index) => (
+                <motion.div
+                  key={creature.name}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  whileHover={{ scale: 1.05 }}
+                  className="p-6 transition-all border border-gray-700 bg-gray-800/50 backdrop-blur-sm rounded-2xl hover:border-purple-500"
+                >
+                  <div className={`h-48 rounded-lg bg-gradient-to-br ${creature.color} flex items-center justify-center mb-4`}>
+                    <span className="text-7xl animate-pulse">{creature.emoji}</span>
+                  </div>
 
-              <h3 className="mb-2 text-2xl font-bold text-white">{creature.name}</h3>
-              <p className="mb-4 text-gray-400">{creature.description}</p>
+                  <h3 className="mb-2 text-2xl font-bold text-white">{creature.name}</h3>
+                  <p className="mb-4 text-gray-400">{creature.description}</p>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="text-gray-300">
-                  <span className="text-sm">ATK: </span>
-                  <span className="font-bold text-orange-400">{creature.stats.attack}</span>
-                </div>
-                <div className="text-gray-300">
-                  <span className="text-sm">DEF: </span>
-                  <span className="font-bold text-blue-400">{creature.stats.defense}</span>
-                </div>
-                <div className="text-gray-300">
-                  <span className="text-sm">SPD: </span>
-                  <span className="font-bold text-green-400">{creature.stats.speed}</span>
-                </div>
-                <div className="text-gray-300">
-                  <span className="text-sm">INT: </span>
-                  <span className="font-bold text-purple-400">{creature.stats.intelligence}</span>
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="text-gray-300">
+                      <span className="text-sm">ATK: </span>
+                      <span className="font-bold text-orange-400">{creature.stats.attack}</span>
+                    </div>
+                    <div className="text-gray-300">
+                      <span className="text-sm">DEF: </span>
+                      <span className="font-bold text-blue-400">{creature.stats.defense}</span>
+                    </div>
+                    <div className="text-gray-300">
+                      <span className="text-sm">SPD: </span>
+                      <span className="font-bold text-green-400">{creature.stats.speed}</span>
+                    </div>
+                    <div className="text-gray-300">
+                      <span className="text-sm">INT: </span>
+                      <span className="font-bold text-purple-400">{creature.stats.intelligence}</span>
+                    </div>
+                  </div>
 
-              <button
-                onClick={() => handleMint(creature)}
-                disabled={loading || mintingCreature === creature.name}
-                className={`w-full py-3 px-6 rounded-lg font-bold text-white transition-all ${loading || mintingCreature === creature.name
-                    ? 'bg-gray-600 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
-                  }`}
-              >
-                {mintingCreature === creature.name ? 'Minting...' : 'Mint Creature (0.5 MATIC)'}
-              </button>
-            </motion.div>
-          ))}
-        </div>
+                  <button
+                    onClick={() => handleMint(creature)}
+                    disabled={loading || mintingCreature === creature.name}
+                    className={`w-full py-3 px-6 rounded-lg font-bold text-white transition-all ${
+                      loading || mintingCreature === creature.name
+                        ? 'bg-gray-600 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
+                    }`}
+                  >
+                    {mintingCreature === creature.name 
+                      ? 'Minting...' 
+                      : `Mint Creature (${isDemoMode ? 'Free' : '0.5 MATIC'})`}
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
