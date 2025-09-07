@@ -1,230 +1,251 @@
-// frontend/hooks/useBlockchain.js
-import { useState, useEffect } from 'react';
-import { useAccount, useNetwork, useContract, useContractRead, useContractWrite } from 'wagmi';
-import { ethers } from 'ethers';
-import toast from 'react-hot-toast';
-import verbwireClient from '../utils/verbwireClient';
+// hooks/useBlockchain.js
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount, useContractRead, useContractWrite } from 'wagmi';
+import { parseEther } from 'viem';
+import EvoSoulsABI from '../contracts/EvoSoulsABI.json';
 
-const CONTRACT_ABI = [
-  "function mintCreature(string memory _name, string memory _element) public payable",
-  "function getCreature(uint256 _tokenId) public view returns (tuple(string name, string element, uint256 level, uint256 battleCount, uint256 wins, string evolutionStage, uint256 mintedAt, uint256 lastBattleTime))",
-  "function getUserCreatures(address _owner) public view returns (uint256[] memory)",
-  "function updateBattleStats(uint256 _tokenId, bool _won) public",
-  "function evolveCreature(uint256 _tokenId, string memory _newStage) public",
-  "function MINT_PRICE() public view returns (uint256)"
-];
+// Get API URL with fallback
+const getApiUrl = () => {
+  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  // Remove trailing slash if present
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+};
 
-export function useBlockchain() {
+const API_URL = getApiUrl();
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+
+export const useBlockchain = () => {
   const { address, isConnected } = useAccount();
-  const { chain } = useNetwork();
-  const [loading, setLoading] = useState(false);
   const [creatures, setCreatures] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-  const isValidChain = chain?.id === parseInt(process.env.NEXT_PUBLIC_CHAIN_ID);
+  // Contract interactions (only if not in demo mode and contract is deployed)
+  const { data: mintPrice } = useContractRead({
+    address: CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000' ? CONTRACT_ADDRESS : undefined,
+    abi: EvoSoulsABI,
+    functionName: 'mintPrice',
+    enabled: !DEMO_MODE && CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000',
+  });
 
-  // Demo mode check
-  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || !contractAddress || contractAddress === '0x0000000000000000000000000000000000000000';
+  const { writeAsync: mintCreatureContract } = useContractWrite({
+    address: CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000' ? CONTRACT_ADDRESS : undefined,
+    abi: EvoSoulsABI,
+    functionName: 'mintCreature',
+    enabled: !DEMO_MODE && CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000',
+  });
 
   // Mint creature function
-  const mintCreature = async (creatureData) => {
-    setLoading(true);
-    
+  const mintCreature = async (creatureType, name) => {
     try {
-      if (isDemoMode) {
-        // Demo mode: Use Verbwire API directly
-        toast.loading('Minting your creature...');
-        
-        const metadata = {
-          name: creatureData.name,
-          description: `A ${creatureData.element} creature in the EvoSouls universe`,
-          element: creatureData.element,
-          level: 1,
-          stats: creatureData.stats,
-          evolutionStage: 'Base'
-        };
-        
-        // Simulate minting delay
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Create creature in backend
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/creatures`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...metadata,
-            owner: address,
-            tokenId: `demo-${Date.now()}`
-          })
-        });
-        
-        if (!response.ok) throw new Error('Failed to create creature');
-        
-        const result = await response.json();
-        toast.success('Creature minted successfully!');
-        
-        return result.creature;
-      } else {
-        // Production mode: Use smart contract
-        if (!isValidChain) {
-          toast.error('Please switch to Polygon network');
-          return;
-        }
-        
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const signer = provider.getSigner();
-        const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
-        
-        const mintPrice = await contract.MINT_PRICE();
-        const tx = await contract.mintCreature(creatureData.name, creatureData.element, {
-          value: mintPrice
-        });
-        
-        toast.loading('Minting on blockchain...');
-        const receipt = await tx.wait();
-        
-        // Get token ID from event
-        const mintEvent = receipt.events?.find(e => e.event === 'CreatureMinted');
-        const tokenId = mintEvent?.args?.tokenId?.toString();
-        
-        // Upload metadata to IPFS via Verbwire
-        const metadata = {
-          name: creatureData.name,
-          description: `A ${creatureData.element} creature in the EvoSouls universe`,
-          element: creatureData.element,
-          level: 1,
-          stats: creatureData.stats,
-          evolutionStage: 'Base',
-          tokenId,
-          contractAddress
-        };
-        
-        await verbwireClient.mintNFT(address, metadata);
-        
-        toast.success('Creature minted successfully!');
-        return { ...metadata, tokenId };
+      setLoading(true);
+      setError(null);
+
+      if (!address) {
+        throw new Error('Wallet not connected');
       }
-    } catch (error) {
-      console.error('Minting error:', error);
-      toast.error('Failed to mint creature');
-      throw error;
+
+      console.log('Minting creature:', { creatureType, name, address, API_URL });
+
+      // Create creature in database first
+      const response = await fetch(`${API_URL}/api/creatures`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress: address,
+          name,
+          element: creatureType,
+          demoMode: DEMO_MODE,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server response:', errorText);
+        throw new Error(`Failed to create creature: ${response.status}`);
+      }
+
+      const creatureData = await response.json();
+      console.log('Creature created in database:', creatureData);
+
+      // If not in demo mode and contract is deployed, mint on blockchain
+      if (!DEMO_MODE && CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000') {
+        try {
+          const tx = await mintCreatureContract({
+            args: [creatureData.tokenId, creatureData.tokenURI],
+            value: mintPrice || parseEther('0.01'),
+          });
+
+          console.log('Blockchain transaction:', tx);
+          
+          // Update creature with transaction hash
+          await fetch(`${API_URL}/api/creatures/${creatureData._id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              transactionHash: tx.hash,
+              status: 'minted',
+            }),
+          });
+        } catch (blockchainError) {
+          console.error('Blockchain minting failed:', blockchainError);
+          // Continue anyway in demo mode
+          if (!DEMO_MODE) {
+            throw blockchainError;
+          }
+        }
+      }
+
+      // Refresh creatures list
+      await fetchUserCreatures();
+      
+      return creatureData;
+    } catch (err) {
+      console.error('Minting error:', err);
+      setError(err.message);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
   // Fetch user creatures
-  const fetchUserCreatures = async () => {
-    if (!address) return;
-    
-    setLoading(true);
-    
+  const fetchUserCreatures = useCallback(async () => {
+    if (!address) {
+      setCreatures([]);
+      return;
+    }
+
     try {
-      if (isDemoMode) {
-        // Fetch from backend API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/creatures/user/${address}`);
-        const data = await response.json();
-        setCreatures(data || []);
-      } else {
-        // Fetch from blockchain
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, provider);
-        
-        const tokenIds = await contract.getUserCreatures(address);
-        const creaturePromises = tokenIds.map(async (tokenId) => {
-          const creature = await contract.getCreature(tokenId);
-          return {
-            tokenId: tokenId.toString(),
-            name: creature.name,
-            element: creature.element,
-            level: creature.level.toNumber(),
-            battleCount: creature.battleCount.toNumber(),
-            wins: creature.wins.toNumber(),
-            evolutionStage: creature.evolutionStage
-          };
-        });
-        
-        const userCreatures = await Promise.all(creaturePromises);
-        setCreatures(userCreatures);
+      setLoading(true);
+      console.log('Fetching creatures for:', address, 'from:', `${API_URL}/api/creatures/user/${address}`);
+      
+      const response = await fetch(`${API_URL}/api/creatures/user/${address}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('No creatures found for user');
+          setCreatures([]);
+          return;
+        }
+        throw new Error(`Failed to fetch creatures: ${response.status}`);
       }
-    } catch (error) {
-      console.error('Error fetching creatures:', error);
-      toast.error('Failed to load creatures');
+
+      const data = await response.json();
+      console.log('Fetched creatures:', data);
+      setCreatures(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error fetching creatures:', err);
+      setError(err.message);
+      setCreatures([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [address]);
+
+  // Update creature metadata
+  const updateCreatureMetadata = async (creatureId, metadata) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${API_URL}/api/creatures/${creatureId}/metadata`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(metadata),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update metadata');
+      }
+
+      const updatedCreature = await response.json();
+      
+      // Update local state
+      setCreatures(prev => 
+        prev.map(c => c._id === creatureId ? updatedCreature : c)
+      );
+
+      return updatedCreature;
+    } catch (err) {
+      console.error('Error updating metadata:', err);
+      setError(err.message);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  // Update battle stats
-  const updateBattleStats = async (tokenId, won) => {
+  // Battle functions
+  const startBattle = async (creatureId, opponentAddress) => {
     try {
-      if (isDemoMode) {
-        // Update via API
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/creatures/update-stats`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            creatureId: tokenId,
-            battleCount: 1,
-            wins: won ? 1 : 0
-          })
-        });
-      } else {
-        // Update on blockchain
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const signer = provider.getSigner();
-        const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
-        
-        const tx = await contract.updateBattleStats(tokenId, won);
-        await tx.wait();
+      const response = await fetch(`${API_URL}/api/battles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          creatureId,
+          playerAddress: address,
+          opponentAddress,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start battle');
       }
-    } catch (error) {
-      console.error('Error updating battle stats:', error);
-      throw error;
+
+      return await response.json();
+    } catch (err) {
+      console.error('Error starting battle:', err);
+      setError(err.message);
+      throw err;
     }
   };
 
-  // Evolve creature
-  const evolveCreature = async (tokenId, newStage, metadata) => {
-    try {
-      if (isDemoMode) {
-        // Update metadata via Verbwire
-        await verbwireClient.updateNFTMetadata(tokenId, contractAddress, metadata);
-      } else {
-        // Update on blockchain
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const signer = provider.getSigner();
-        const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
-        
-        const tx = await contract.evolveCreature(tokenId, newStage);
-        await tx.wait();
-        
-        // Update metadata on IPFS
-        await verbwireClient.updateNFTMetadata(tokenId, contractAddress, metadata);
-      }
-      
-      toast.success('Creature evolved!');
-    } catch (error) {
-      console.error('Error evolving creature:', error);
-      throw error;
-    }
-  };
-
+  // Fetch creatures on mount and address change
   useEffect(() => {
-    if (isConnected && address) {
+    if (address) {
       fetchUserCreatures();
     }
-  }, [address, isConnected]);
+  }, [address, fetchUserCreatures]);
+
+  // Log environment info on mount
+  useEffect(() => {
+    console.log('Blockchain hook initialized:', {
+      API_URL,
+      CONTRACT_ADDRESS,
+      DEMO_MODE,
+      isConnected,
+      address,
+    });
+  }, []);
 
   return {
+    // State
     address,
     isConnected,
-    isDemoMode,
-    loading,
     creatures,
+    loading,
+    error,
+    
+    // Functions
     mintCreature,
     fetchUserCreatures,
-    updateBattleStats,
-    evolveCreature
+    updateCreatureMetadata,
+    startBattle,
+    refreshCreatures: fetchUserCreatures, // Alias for backward compatibility
+    
+    // Contract data
+    mintPrice: DEMO_MODE ? parseEther('0') : (mintPrice || parseEther('0.01')),
+    contractAddress: CONTRACT_ADDRESS,
+    demoMode: DEMO_MODE,
   };
-}
+};

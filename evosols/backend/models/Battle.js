@@ -1,78 +1,84 @@
-﻿import mongoose from 'mongoose';
+﻿// backend/models/Battle.js
+import mongoose from 'mongoose';
 
-const BattleSchema = new mongoose.Schema({
-  battleId: { type: String, required: true, unique: true },
+const battleSchema = new mongoose.Schema({
+  battleId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
   player1: {
-    address: { type: String, required: true },
-    creatureId: { type: String, required: true },
-    creature: { type: mongoose.Schema.Types.ObjectId, ref: 'Creature' }
+    address: {
+      type: String,
+      required: true,
+    },
+    creatureId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Creature',
+    },
+    ready: {
+      type: Boolean,
+      default: false,
+    },
   },
   player2: {
-    address: { type: String, required: true },
-    creatureId: { type: String, required: true },
-    creature: { type: mongoose.Schema.Types.ObjectId, ref: 'Creature' }
+    address: {
+      type: String,
+      required: true,
+    },
+    creatureId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Creature',
+    },
+    ready: {
+      type: Boolean,
+      default: false,
+    },
   },
-  
   status: {
     type: String,
-    enum: ['pending', 'active', 'completed', 'abandoned'],
-    default: 'pending'
+    enum: ['waiting', 'active', 'completed', 'abandoned'],
+    default: 'waiting',
   },
-  
-  battleLog: [{
-    turn: Number,
+  moves: [{
     player: String,
     move: {
-      id: String,
-      name: String,
       type: String,
-      power: Number,
-      energyCost: Number
+      enum: ['attack', 'defend', 'special', 'ultimate'],
     },
     damage: Number,
-    healing: Number,
-    effect: String,
-    timestamp: { type: Date, default: Date.now }
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
   }],
-  
-  behaviorChanges: {
+  winner: {
+    type: String,
+    default: null,
+  },
+  behaviorData: {
     player1: {
       aggressive: { type: Number, default: 0 },
       defensive: { type: Number, default: 0 },
       strategic: { type: Number, default: 0 },
       risky: { type: Number, default: 0 },
-      adaptive: { type: Number, default: 0 }
+      adaptive: { type: Number, default: 0 },
     },
     player2: {
       aggressive: { type: Number, default: 0 },
       defensive: { type: Number, default: 0 },
       strategic: { type: Number, default: 0 },
       risky: { type: Number, default: 0 },
-      adaptive: { type: Number, default: 0 }
-    }
-  },
-  
-  result: {
-    winner: String,
-    loser: String,
-    isDraw: { type: Boolean, default: false }
-  },
-  
-  rewards: {
-    winner: {
-      experience: Number,
-      matic: Number
+      adaptive: { type: Number, default: 0 },
     },
-    loser: {
-      experience: Number,
-      matic: Number
-    }
   },
-  
-  startTime: { type: Date, default: Date.now },
-  endTime: Date,
-  totalTurns: { type: Number, default: 0 },
-  duration: Number // in seconds
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  completedAt: Date,
 });
 
-export const Battle = mongoose.model('Battle', BattleSchema);
+const Battle = mongoose.model('Battle', battleSchema);
+
+export default Battle;
