@@ -7,14 +7,14 @@ import toast from 'react-hot-toast';
 
 export default function Collection() {
   const { address, isConnected } = useAccount();
-  const { creatures, evolveCreature, loading, refreshCreatures } = useBlockchain();
+  const { creatures, evolveCreature, loading, fetchUserCreatures  } = useBlockchain();
   const [evolvingCreature, setEvolvingCreature] = useState(null);
   const [showEvolutionModal, setShowEvolutionModal] = useState(false);
   const [selectedCreature, setSelectedCreature] = useState(null);
 
   useEffect(() => {
     if (isConnected && address) {
-      refreshCreatures();
+      fetchUserCreatures ();
     }
   }, [isConnected, address]);
 
@@ -24,7 +24,7 @@ export default function Collection() {
     try {
       await evolveCreature(creature);
       toast.success('Evolution complete! Your creature has transformed.');
-      await refreshCreatures();
+      await fetchUserCreatures ();
       setShowEvolutionModal(false);
     } catch (error) {
       console.error('Evolution failed:', error);

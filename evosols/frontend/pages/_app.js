@@ -1,14 +1,14 @@
 ﻿import '../styles/globals.css'
 import '@rainbow-me/rainbowkit/styles.css'
 import { getDefaultWallets, RainbowKitProvider } from '@rainbow-me/rainbowkit'
-import { configureChains, createConfig, WagmiConfig } from 'wagmi'
+import { configureChains, createConfig, sepolia, WagmiConfig } from 'wagmi'
 import { polygon, polygonMumbai } from 'wagmi/chains'
 import { publicProvider } from 'wagmi/providers/public'
 import { Toaster } from 'react-hot-toast'
 import { useEffect, useState } from 'react'
 
 const { chains, publicClient } = configureChains(
-  [polygon, polygonMumbai],
+  [sepolia],
   [publicProvider()]
 )
 
